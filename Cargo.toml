@@ -1,0 +1,11 @@
+[package]
+name = "st-click"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+st_sync = { version = "0.1", path="../st-sync" }
+tokio = { version = "1.18.2", features = [ "full" ] }
+
