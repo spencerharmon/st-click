@@ -198,7 +198,6 @@ dependencies = [
 name = "st-click"
 version = "0.1.0"
 dependencies = [
- "crossbeam-channel",
  "st_sync",
  "tokio",
 ]

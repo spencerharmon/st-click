@@ -1,18 +1,21 @@
 use st_sync;
 use tokio;
-use crossbeam_channel::*;
 
 #[tokio::main]
 async fn main() {
-    let (tx, rx) = bounded(1);
-    let sync_client = st_sync::client::Client::new(tx);
-    tokio::spawn(async move {
-	loop {
-	    println!("{:?}", rx.recv().unwrap());
+    let sync_client = st_sync::client::Client::new();
+
+    let mut suppress_err: bool = false;
+    loop {
+	match sync_client.recv_next_beat_frame() {
+	    Ok(val) => println!("{:?}", val),
+	    Err(message) => {
+		if !suppress_err {
+		    println!("{}", message);
+		}
+		suppress_err = true;
+		    
+	    }
 	}
-    });
-    match sync_client.start().await {
-	Ok(()) => (),
-	Err(message) => println!("{}", message)
     }
 }
