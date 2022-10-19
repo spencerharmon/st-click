@@ -55,10 +55,50 @@ dependencies = [
 ]
 
 [[package]]
+name = "jack"
+version = "0.10.0"
+source = "git+https://github.com/RustAudio/rust-jack?branch=main#6133ac4d3654668f461a036fef8e3d9655b6c372"
+dependencies = [
+ "bitflags",
+ "jack-sys",
+ "lazy_static",
+ "libc",
+ "log",
+]
+
+[[package]]
+name = "jack-sys"
+version = "0.4.0"
+source = "git+https://github.com/RustAudio/rust-jack?branch=main#6133ac4d3654668f461a036fef8e3d9655b6c372"
+dependencies = [
+ "bitflags",
+ "lazy_static",
+ "libc",
+ "libloading",
+ "pkg-config",
+]
+
+[[package]]
+name = "lazy_static"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
+
+[[package]]
 name = "libc"
 version = "0.2.135"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68783febc7782c6c5cb401fbda4de5a9898be1762314da0bb2c10ced61f18b0c"
+
+[[package]]
+name = "libloading"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efbc0f03f9a775e9f6aed295c6a1ba2253c5757a9e03d55c6caa46a681abcddd"
+dependencies = [
+ "cfg-if",
+ "winapi",
+]
 
 [[package]]
 name = "lock_api"
@@ -137,6 +177,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e0a7ae3ac2f1173085d398531c705756c94a4c56843785df85a60c1a0afac116"
 
 [[package]]
+name = "pkg-config"
+version = "0.3.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1df8c4ec4b0627e53bdf214615ad287367e482558cf84b109250b37464dc03ae"
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -198,6 +244,8 @@ dependencies = [
 name = "st-click"
 version = "0.1.0"
 dependencies = [
+ "crossbeam-channel",
+ "jack",
  "st_sync",
  "tokio",
 ]

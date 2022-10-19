@@ -1,3 +1,4 @@
+mod output;
 use st_sync;
 use tokio;
 
@@ -5,6 +6,10 @@ use tokio;
 async fn main() {
     let sync_client = st_sync::client::Client::new();
 
+
+    let o = output::Output::new();
+    tokio::task::spawn(o.jack_output());
+    
     let mut suppress_err: bool = false;
     loop {
 	match sync_client.recv_next_beat_frame() {
