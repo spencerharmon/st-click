@@ -1,8 +1,9 @@
-use std::{thread, time};
+use jack::jack_sys as j;
 use tokio::task;
-use tokio::time::{sleep, Duration};
 use crossbeam_channel::*;
-
+use std::mem::MaybeUninit;
+use crate::sequencer::Sequencer;
+use std::{thread, time};
 pub struct Output;
 
 impl Output {
@@ -10,39 +11,47 @@ impl Output {
         Output { }
     }
     pub async fn jack_output(self)  {
-        let (tx, rx) = bounded(1000);
+	//carries midi signals
+        let (midi_tx, midi_rx) = bounded(1000);
+	//signals once per process cycle
+        let (ps_tx, ps_rx) = bounded(1);
+	
 	
         let (client, _status) =
             jack::Client::new("st-click", jack::ClientOptions::NO_START_SERVER).unwrap();
         let mut midi_port = client
             .register_port("midi", jack::MidiOut::default())
             .unwrap();
+	let client_pointer = client.raw();
 
 	let process = jack::ClosureProcessHandler::new(
-            move |_: &jack::Client, ps: &jack::ProcessScope| -> jack::Control {
-                
-                // Get output buffer
-                let mut out = midi_port.writer(ps);
-		match rx.try_recv() {
-		    Ok(msg) => {
-			let (frame, rawmidi) = msg;
-			out.write(&rawmidi);
-			()
-		    }
+            move |client: &jack::Client, ps: &jack::ProcessScope| -> jack::Control {
+                match ps_tx.try_send(()) {
+		    Ok(()) => (),
 		    Err(_) => ()
 		}
-                // Continue as normal
+
+		// Get output buffer
+		let mut out = midi_port.writer(ps);
+
+		match midi_rx.try_recv() {
+		    Ok(msg) => {
+			out.write(&msg);
+			()
+		    }
+		    Err(e) => ()
+		}
+
                 jack::Control::Continue
             },
         );
         let active_client = client.activate_async((), process).unwrap();
+
+	let sequencer = Sequencer::new(midi_tx, ps_rx, client_pointer.expose_addr());
+
+	tokio::task::spawn(sequencer.start());
 	loop {
-	    let dur = time::Duration::from_millis(1000);
-	    thread::sleep(dur);
-	    let zero: &[u8]  = &[0; 0];
-	    let rm = jack::RawMidi { time: 0, bytes: zero };
-	    tx.send((1234, rm));
+	    continue
 	}
     }
 }
-
