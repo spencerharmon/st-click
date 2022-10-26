@@ -18,7 +18,7 @@ pub struct Sequence <'a> {
 }
 impl <'a> Sequence <'a> {
     pub fn new (beats_per_bar: f32, frames_per_beat: u64, bars: u32) -> Sequence <'a> {
-	let length = beats_per_bar as u64 * frames_per_beat * bars as u64;
+	let length = beats_per_bar as u64 * frames_per_beat * bars as u64 / 2;
 	let mut seq: Vec<Vec<RawMidi>> = Vec::new();
 	for i in 0..length as usize {
 	    let v = Vec::new();
@@ -30,27 +30,30 @@ impl <'a> Sequence <'a> {
 	Sequence { beats_per_bar, frames_per_beat, length, seq, pos }
     }
     pub fn add_notes(&mut self, signal: RawMidi<'a>, every_n: u16, skip_n: u16, beat_value: BeatValue){
-	let frames = beat_value * self.frames_per_beat as f32;
+	let frames = beat_value * self.frames_per_beat as f32 / 2.0;
 	let mut n = skip_n;
 	let mut beat = 0;
 	for i in 0..self.length {
 	    let v = &mut self.seq.get_mut(i as usize).unwrap();
-	    if i as f32 % frames == 0.0{
+	    if i as f32 % frames < 0.001 {
+		beat = beat + 1;
 		println!("frame matches beat value");
 		//frame matches beat value
-		beat = beat + 1;
-		if n == 0 && beat % every_n == 0 {
+
+		if n == 0 && (beat - skip_n - 1) % every_n == 0 {
 		    println!("n beats have been skipped. go time.");
 		    //n beats have been skipped. go time.
 		    v.push(signal);
 		    n = 0;
-		} else {
+		} else if n >= 1{
 		    n = n - 1;
 		}
 	    }
 	}
     }
-    fn process_position(&mut self, pos_frame: u64) -> Vec<RawMidi<'a>> {
+    fn process_position(&mut self,
+			pos_frame: u64
+    ) -> Vec<RawMidi<'a>> {
 	let mut ret = Vec::new();
 
 	let new_pos = pos_frame % self.length;
@@ -65,6 +68,7 @@ impl <'a> Sequence <'a> {
 		    for m in &mut **iv {
 			rm.time = t as u32;
 			rm.bytes = m.bytes;
+			println!("{:?}", m.bytes);
 			ret.push(rm);
 		    }
 		}
@@ -78,6 +82,7 @@ impl <'a> Sequence <'a> {
 		    for m in &mut **iv {
 			rm.time = t as u32;
 			rm.bytes = m.bytes;
+			println!("{:?}", m.bytes);
    			ret.push(rm);
 		    }
 		}
@@ -88,11 +93,14 @@ impl <'a> Sequence <'a> {
 		    for m in &mut **iv {
 			rm.time = t as u32;
 			rm.bytes = m.bytes;
+			println!("{:?}", m.bytes);
    			ret.push(rm);
 		    }
 		}
 	    }
 	}
+	//adjust to sync with next beat frame
+	
 	self.pos = new_pos;
 	ret
     }
@@ -140,13 +148,20 @@ impl <'a> Sequencer<'_> {
 
 	    let mut seq = Sequence::new((*pos).beats_per_bar, next_beat_frame, 1);
 
-	    let zero: &[u8] = &[0; 0];
-    	    let rm = jack::RawMidi { time: 0, bytes: zero };
-	    seq.add_notes(rm, 1, 0, Semiquaver);
+	    let zero: &[u8] = &[0; 1];
+	    let one: &[u8] = &[1; 1];
+	    let two: &[u8] = &[2; 1];
+	    let three: &[u8] = &[3; 1];
+    	    let rm0 = jack::RawMidi { time: 0, bytes: zero };
+    	    let rm1 = jack::RawMidi { time: 0, bytes: one };
+    	    let rm2 = jack::RawMidi { time: 0, bytes: two };
+    	    let rm3 = jack::RawMidi { time: 0, bytes: three };
+	    seq.add_notes(rm0, 4, 0, Crotchet);
+	    seq.add_notes(rm1, 4, 1, Crotchet);
+	    seq.add_notes(rm2, 4, 2, Crotchet);
+	    seq.add_notes(rm3, 4, 3, Crotchet);
 	    loop {
 	    	let state = j::jack_transport_query(client_pointer, pos);
-		thread::sleep(time::Duration::from_millis(10));
-
 		match self.ps_rx.try_recv(){
 		    Ok(()) => (),
 		    Err(_) => continue
