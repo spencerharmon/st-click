@@ -36,9 +36,6 @@ impl Output {
 
 		match midi_rx.try_recv() {
 		    Ok(msg) => {
-			let mut mangled: jack::RawMidi = msg;
-			mangled.time = 0;
-//			out.write(&mangled);
 			out.write(&msg);
 			()
 		    }

@@ -14,8 +14,11 @@ pub struct Sequence <'a> {
     frames_per_beat: u64,
     length: u64,
     seq: Vec<Vec<RawMidi<'a>>>,
-    pos: u64,
-    test_time: u32
+    playhead: u64,
+    last_frame: u64,
+    n_beats: u16,
+    beat_counter: u16
+	
 }
 impl <'a> Sequence <'a> {
     pub fn new (beats_per_bar: f32, frames_per_beat: u64, bars: u32) -> Sequence <'a> {
@@ -25,11 +28,22 @@ impl <'a> Sequence <'a> {
 	    let v = Vec::new();
 	    seq.push(v);
 	}
-	
-	let pos = 0;
 
-	let test_time = 0;
-	Sequence { beats_per_bar, frames_per_beat, length, seq, pos, test_time }
+	let playhead = 0;
+	let last_frame = 0;
+
+	let n_beats = (beats_per_bar as u32 * bars) as u16;
+	let beat_counter = 1;
+	Sequence {
+	    beats_per_bar,
+	    frames_per_beat,
+	    length,
+	    seq,
+	    playhead,
+	    last_frame,
+	    n_beats,
+	    beat_counter
+	}
     }
     pub fn add_notes(&mut self, signal: RawMidi<'a>, every_n: u16, skip_n: u16, beat_value: BeatValue){
 	let frames = beat_value * self.frames_per_beat as f32 / 2.0;
@@ -53,62 +67,65 @@ impl <'a> Sequence <'a> {
 	    }
 	}
     }
+
     fn process_position(&mut self,
-			pos_frame: u64
+			    pos_frame: u64,
+			    next_beat_frame: u64
     ) -> Vec<RawMidi<'a>> {
 	let mut ret = Vec::new();
+	let mut beat_this_cycle = false;
+	if ((self.last_frame < next_beat_frame) &&
+	    (next_beat_frame <= pos_frame)) ||
+	    self.last_frame == 0 {
+			beat_this_cycle = true;
+	}
+	let final_beat = self.beat_counter == self.n_beats;
+	let mut beat_frame = 1;
+	let nframes = pos_frame - self.last_frame;
 
-	let new_pos = pos_frame % self.length;
+	if beat_this_cycle {
+	    println!("{:?}, {:?}, {:?}", self.last_frame, next_beat_frame, pos_frame);
+	    if self.last_frame == 0 {
+		beat_frame = 1;
+	    } else {
+		beat_frame = next_beat_frame - self.last_frame;
+	    }
+	    println!("{:?}", beat_frame);
+	    println!("{:?}", nframes);
+	}
 
     	let zero: &[u8] = &[0; 1];
-	let  mut rm = jack::RawMidi { time: 0, bytes: zero };		    
-	if new_pos > self.pos{
-//	    let t = new_pos - self.pos;
-	    for i in self.pos..new_pos {
-		let v = &mut self.seq.get_mut(i as usize);
-		for iv in v {
-		    for m in &mut **iv {
-			rm.time = self.test_time as u32;
-			rm.time = ((i - self.pos)/2) as u32;
-//			println!("time {:?}", (i - self.pos));
-			rm.bytes = m.bytes;
-			ret.push(rm);
-		    }
-		}
-	    }
-	}
-	else if self.pos > new_pos {
-	    let t = self.length - self.pos + new_pos;
-	    for i in self.pos..self.length {
-		let v = &mut self.seq.get_mut(i as usize);
-		for iv in v {
-		    for m in &mut **iv {
-//			rm.time = t as u32;
-			rm.time = ((i - self.pos) / 2) as u32;
-
-//			println!("calculated time {:?}", (i - self.pos));
-			rm.bytes = m.bytes;
-   			ret.push(rm);
-		    }
-		}
-	    }
-	    for i in 0..new_pos{
-		let v = &mut self.seq.get_mut(i as usize);
-		for iv in v {
-		    for m in &mut **iv {
-//			rm.time = t as u32;
-//			println!("calculated time {:?}", (self.length - self.pos + i));
-			rm.time = ((self.length - self.pos + i) / 2) as u32;
-			rm.bytes = m.bytes;
-   			ret.push(rm);
-		    }
-		}
-	    }
-	}
+	let  mut rm = jack::RawMidi { time: 0, bytes: zero };
 	
-	self.pos = new_pos;
+	for i in 1..nframes + 1 {
+	    let v = &mut self.seq.get_mut((self.playhead) as usize);
+	    for iv in v {
+		for m in &mut **iv {
+		    rm.time = (i/2) as u32;
+		    rm.bytes = m.bytes;
+		    ret.push(rm);
+		}
+	    }
+//	    println!("{:?} {:?} {:?} {:?}", beat_this_cycle, i, beat_frame, nframes);
+	    if beat_this_cycle && i == beat_frame {
+		println!("final beat {:?}", final_beat);
+		println!("beat_counter {:?}", self.beat_counter);
+		if self.beat_counter == self.n_beats {
+		    self.beat_counter = 1;
+		} else {
+		    self.beat_counter = self.beat_counter + 1;
+		}
+		if final_beat {
+		    self.playhead = 0;
+		}
+	    } else {
+		self.playhead = self.playhead + 1;
+	    }
+	}
+	self.last_frame = pos_frame;
 	ret
     }
+    
 }
 
 pub struct Sequencer<'a>{
@@ -128,7 +145,6 @@ impl <'a> Sequencer<'_> {
     pub async fn start(self) {
 	let client_pointer: *const j::jack_client_t = std::ptr::from_exposed_addr(self.jack_client_addr);
 
-
 	let mut suppress_err: bool = false;
 
 	let mut next_beat_frame = 0;
@@ -147,10 +163,12 @@ impl <'a> Sequencer<'_> {
 		}
 	    }
 	}
+	let mut first = true;
 	unsafe {
 	    let mut pos = MaybeUninit::uninit().as_mut_ptr();
     	    j::jack_transport_query(client_pointer, pos);
 
+	    println!("next beat frame at this point: {:?}", next_beat_frame);
 	    let mut seq = Sequence::new((*pos).beats_per_bar, next_beat_frame, 1);
 
 	    let zero: &[u8] = &[0; 1];
@@ -172,7 +190,12 @@ impl <'a> Sequencer<'_> {
 		    Err(_) => continue
 		}
 
-		let midi_vec = &seq.process_position((*pos).frame as u64);
+		match self.sync.recv_next_beat_frame() {
+		    Ok(val) => next_beat_frame = val,
+		    Err(_) => ()
+		}
+		
+		let midi_vec = &seq.process_position((*pos).frame as u64, next_beat_frame);
 
 		for signal in midi_vec {
 		    println!("{:?}", signal);
