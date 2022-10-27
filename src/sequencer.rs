@@ -14,7 +14,8 @@ pub struct Sequence <'a> {
     frames_per_beat: u64,
     length: u64,
     seq: Vec<Vec<RawMidi<'a>>>,
-    pos: u64
+    pos: u64,
+    test_time: u32
 }
 impl <'a> Sequence <'a> {
     pub fn new (beats_per_bar: f32, frames_per_beat: u64, bars: u32) -> Sequence <'a> {
@@ -26,8 +27,9 @@ impl <'a> Sequence <'a> {
 	}
 	
 	let pos = 0;
-	    
-	Sequence { beats_per_bar, frames_per_beat, length, seq, pos }
+
+	let test_time = 0;
+	Sequence { beats_per_bar, frames_per_beat, length, seq, pos, test_time }
     }
     pub fn add_notes(&mut self, signal: RawMidi<'a>, every_n: u16, skip_n: u16, beat_value: BeatValue){
 	let frames = beat_value * self.frames_per_beat as f32 / 2.0;
@@ -61,14 +63,15 @@ impl <'a> Sequence <'a> {
     	let zero: &[u8] = &[0; 1];
 	let  mut rm = jack::RawMidi { time: 0, bytes: zero };		    
 	if new_pos > self.pos{
-	    let t = new_pos - self.pos;
+//	    let t = new_pos - self.pos;
 	    for i in self.pos..new_pos {
 		let v = &mut self.seq.get_mut(i as usize);
 		for iv in v {
 		    for m in &mut **iv {
-			rm.time = t as u32;
+			rm.time = self.test_time as u32;
+			rm.time = ((i - self.pos)/2) as u32;
+//			println!("time {:?}", (i - self.pos));
 			rm.bytes = m.bytes;
-			println!("{:?}", m.bytes);
 			ret.push(rm);
 		    }
 		}
@@ -80,9 +83,11 @@ impl <'a> Sequence <'a> {
 		let v = &mut self.seq.get_mut(i as usize);
 		for iv in v {
 		    for m in &mut **iv {
-			rm.time = t as u32;
+//			rm.time = t as u32;
+			rm.time = ((i - self.pos) / 2) as u32;
+
+//			println!("calculated time {:?}", (i - self.pos));
 			rm.bytes = m.bytes;
-			println!("{:?}", m.bytes);
    			ret.push(rm);
 		    }
 		}
@@ -91,15 +96,15 @@ impl <'a> Sequence <'a> {
 		let v = &mut self.seq.get_mut(i as usize);
 		for iv in v {
 		    for m in &mut **iv {
-			rm.time = t as u32;
+//			rm.time = t as u32;
+//			println!("calculated time {:?}", (self.length - self.pos + i));
+			rm.time = ((self.length - self.pos + i) / 2) as u32;
 			rm.bytes = m.bytes;
-			println!("{:?}", m.bytes);
    			ret.push(rm);
 		    }
 		}
 	    }
 	}
-	//adjust to sync with next beat frame
 	
 	self.pos = new_pos;
 	ret
@@ -170,7 +175,7 @@ impl <'a> Sequencer<'_> {
 		let midi_vec = &seq.process_position((*pos).frame as u64);
 
 		for signal in midi_vec {
-		    println!("{:?}", signal.bytes);
+		    println!("{:?}", signal);
 		    self.midi_tx.send(*signal);
 		}
 	    }
