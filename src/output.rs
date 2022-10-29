@@ -2,8 +2,11 @@ use jack::jack_sys as j;
 use tokio::task;
 use crossbeam_channel::*;
 use std::mem::MaybeUninit;
-use crate::sequencer::Sequencer;
+use crate::beat_values::*;
+use crate::sequencer::{Sequencer, Sequence};
 use std::{thread, time};
+use crate::note_map;
+
 pub struct Output;
 
 impl Output {
@@ -47,11 +50,16 @@ impl Output {
         );
         let active_client = client.activate_async((), process).unwrap();
 
-	let sequencer = Sequencer::new(midi_tx, ps_rx, client_pointer.expose_addr());
+	let mut sequencer = Sequencer::new(midi_tx, ps_rx, client_pointer.expose_addr());
 
-	tokio::task::spawn(sequencer.start());
-	loop {
-	    continue
-	}
+	let bogus = 24000;
+	    let mut seq = Sequence::new(4.0 , bogus, 1);
+
+
+    	let rm0 = jack::RawMidi { time: 0, bytes: note_map::c1_on().as_slice() };
+
+	    seq.add_notes(rm0, 4, 0, Crotchet);
+
+	sequencer.start(seq);
     }
 }

@@ -4,6 +4,7 @@ use crossbeam_channel::*;
 use std::mem::MaybeUninit;
 use std::{thread, time};
 use jack::RawMidi;
+use crate::note_map;
 
 fn get_beat_value(base_beat_value: BeatValue, n_dots: u16, n_tuplet: u16) -> f32 {
     ((base_beat_value * 2.0) / n_tuplet as f32) * f32::powf(1.5, n_dots.into())
@@ -129,20 +130,20 @@ impl <'a> Sequence <'a> {
 }
 
 pub struct Sequencer<'a>{
-    sync: st_sync::client::Client,
     midi_tx: Sender<RawMidi<'a>>,
+    sync: st_sync::client::Client,
     ps_rx: Receiver<()>,
     jack_client_addr: usize
 }
-impl <'a> Sequencer<'_> {
-    pub fn new(midi_tx: Sender<RawMidi>,
+impl <'a> Sequencer <'a>{
+    pub fn new(midi_tx: Sender<RawMidi<'a>>,
 	       ps_rx: Receiver<()>,
 	       jack_client_addr: usize
     ) -> Sequencer {
 	let sync = st_sync::client::Client::new();
-	Sequencer { sync, midi_tx, ps_rx, jack_client_addr }
+	Sequencer { midi_tx, sync, ps_rx, jack_client_addr }
     }
-    pub async fn start(self) {
+    pub fn start(self, mut seq: Sequence<'a>) {
 	let client_pointer: *const j::jack_client_t = std::ptr::from_exposed_addr(self.jack_client_addr);
 
 	let mut suppress_err: bool = false;
@@ -164,25 +165,39 @@ impl <'a> Sequencer<'_> {
 	    }
 	}
 	let mut first = true;
+
 	unsafe {
 	    let mut pos = MaybeUninit::uninit().as_mut_ptr();
     	    j::jack_transport_query(client_pointer, pos);
 
 	    println!("next beat frame at this point: {:?}", next_beat_frame);
-	    let mut seq = Sequence::new((*pos).beats_per_bar, next_beat_frame, 1);
+//	    let mut seq = Sequence::new((*pos).beats_per_bar, next_beat_frame, 1);
 
-	    let zero: &[u8] = &[0; 1];
-	    let one: &[u8] = &[1; 1];
-	    let two: &[u8] = &[2; 1];
-	    let three: &[u8] = &[3; 1];
-    	    let rm0 = jack::RawMidi { time: 0, bytes: zero };
-    	    let rm1 = jack::RawMidi { time: 0, bytes: one };
-    	    let rm2 = jack::RawMidi { time: 0, bytes: two };
-    	    let rm3 = jack::RawMidi { time: 0, bytes: three };
-	    seq.add_notes(rm0, 4, 0, Crotchet);
-	    seq.add_notes(rm1, 4, 1, Crotchet);
-	    seq.add_notes(rm2, 4, 2, Crotchet);
-	    seq.add_notes(rm3, 4, 3, Crotchet);
+	    
+	    // let two: &[u8] = &[2; 1];
+	    // let three: &[u8] = &[3; 1];
+	    
+//	    let zero: &[u8] = &[0; 1];
+//	    let bytes: &mut [u8] = vec![0; 3];
+
+    	    
+	    //	    let boom = note_map::sonikboom_on();
+	    // let mut seq = Sequence::new((*pos).beats_per_bar, next_beat_frame, 1);
+
+	    // let zero = note_map::c1_on();
+
+
+	    // 	let rm0 = jack::RawMidi { time: 0, bytes: &zero };
+
+	    // seq.add_notes(rm0, 4, 0, Crotchet);
+
+//    	    let mut rm1 = jack::RawMidi { time: 0, bytes: zero.as_mut_slice() };
+//    	    let mut rm2 = jack::RawMidi { time: 0, bytes: zero.as_mut_slice() };
+//    	    let mut rm3 = jack::RawMidi { time: 0, bytes: zero.as_mut_slice() };
+//
+//	    seq.add_notes(rm1, 4, 1, Crotchet);
+//	    seq.add_notes(rm2, 4, 2, Crotchet);
+//	    seq.add_notes(rm3, 4, 3, Crotchet);
 	    loop {
 	    	let state = j::jack_transport_query(client_pointer, pos);
 		match self.ps_rx.try_recv(){
@@ -201,6 +216,7 @@ impl <'a> Sequencer<'_> {
 		    println!("{:?}", signal);
 		    self.midi_tx.send(*signal);
 		}
+
 	    }
 	}
     }

@@ -1,8 +1,10 @@
 #![feature(strict_provenance)]
+#![feature(nll)]
 
 mod output;
 mod sequencer;
 mod beat_values;
+mod note_map;
 use st_sync;
 use tokio;
 use std::{thread, time};

@@ -10,3 +10,4 @@ st_sync = { version = "0.1", path="../st-sync" }
 tokio = { version = "1.18.2", features = [ "full" ] }
 jack = { git = "https://github.com/RustAudio/rust-jack", branch = "main" }
 crossbeam-channel = "0.5.6"
+wmidi = "4.0.6"
