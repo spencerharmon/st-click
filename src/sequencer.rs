@@ -3,28 +3,34 @@ use jack::jack_sys as j;
 use crossbeam_channel::*;
 use std::mem::MaybeUninit;
 use std::{thread, time};
-use jack::RawMidi;
 use crate::note_map;
+
+type OwnedMidiBytes = Vec<u8>;
+
+#[derive(Debug)]
+pub struct OwnedMidi {
+    pub time: u32,
+    pub bytes: OwnedMidiBytes
+}
 
 fn get_beat_value(base_beat_value: BeatValue, n_dots: u16, n_tuplet: u16) -> f32 {
     ((base_beat_value * 2.0) / n_tuplet as f32) * f32::powf(1.5, n_dots.into())
 }
 
-pub struct Sequence <'a> {
+pub struct Sequence {
     beats_per_bar: f32,
     frames_per_beat: u64,
     length: u64,
-    seq: Vec<Vec<RawMidi<'a>>>,
+    seq: Vec<Vec<OwnedMidiBytes>>,
     playhead: u64,
     last_frame: u64,
     n_beats: u16,
     beat_counter: u16
-	
 }
-impl <'a> Sequence <'a> {
-    pub fn new (beats_per_bar: f32, frames_per_beat: u64, bars: u32) -> Sequence <'a> {
+impl Sequence {
+    pub fn new (beats_per_bar: f32, frames_per_beat: u64, bars: u32) -> Sequence {
 	let length = beats_per_bar as u64 * frames_per_beat * bars as u64 / 2;
-	let mut seq: Vec<Vec<RawMidi>> = Vec::new();
+	let mut seq: Vec<Vec<OwnedMidiBytes>> = Vec::new();
 	for i in 0..length as usize {
 	    let v = Vec::new();
 	    seq.push(v);
@@ -46,7 +52,7 @@ impl <'a> Sequence <'a> {
 	    beat_counter
 	}
     }
-    pub fn add_notes(&mut self, signal: RawMidi<'a>, every_n: u16, skip_n: u16, beat_value: BeatValue){
+    pub fn add_notes(&mut self, signal: OwnedMidiBytes, every_n: u16, skip_n: u16, beat_value: BeatValue){
 	let frames = beat_value * self.frames_per_beat as f32 / 2.0;
 	let mut n = skip_n;
 	let mut beat = 0;
@@ -60,7 +66,7 @@ impl <'a> Sequence <'a> {
 		if n == 0 && (beat - skip_n - 1) % every_n == 0 {
 		    println!("n beats have been skipped. go time.");
 		    //n beats have been skipped. go time.
-		    v.push(signal);
+		    v.push(signal.to_owned());
 		    n = 0;
 		} else if n >= 1{
 		    n = n - 1;
@@ -72,7 +78,7 @@ impl <'a> Sequence <'a> {
     fn process_position(&mut self,
 			    pos_frame: u64,
 			    next_beat_frame: u64
-    ) -> Vec<RawMidi<'a>> {
+    ) -> Vec<OwnedMidi> {
 	let mut ret = Vec::new();
 	let mut beat_this_cycle = false;
 	if ((self.last_frame < next_beat_frame) &&
@@ -95,16 +101,17 @@ impl <'a> Sequence <'a> {
 	    println!("{:?}", nframes);
 	}
 
-    	let zero: &[u8] = &[0; 1];
-	let  mut rm = jack::RawMidi { time: 0, bytes: zero };
+
 	
 	for i in 1..nframes + 1 {
 	    let v = &mut self.seq.get_mut((self.playhead) as usize);
 	    for iv in v {
 		for m in &mut **iv {
-		    rm.time = (i/2) as u32;
-		    rm.bytes = m.bytes;
-		    ret.push(rm);
+    		    let mut om = OwnedMidi { time: (i/2) as u32, bytes: Vec::new() };
+		    for b in m.to_owned() {
+			om.bytes.push(b);
+		    }
+		    ret.push(om);
 		}
 	    }
 //	    println!("{:?} {:?} {:?} {:?}", beat_this_cycle, i, beat_frame, nframes);
@@ -129,21 +136,21 @@ impl <'a> Sequence <'a> {
     
 }
 
-pub struct Sequencer<'a>{
-    midi_tx: Sender<RawMidi<'a>>,
+pub struct Sequencer{
+    midi_tx: Sender<OwnedMidi>,
     sync: st_sync::client::Client,
     ps_rx: Receiver<()>,
     jack_client_addr: usize
 }
-impl <'a> Sequencer <'a>{
-    pub fn new(midi_tx: Sender<RawMidi<'a>>,
+impl Sequencer {
+    pub fn new(midi_tx: Sender<OwnedMidi>,
 	       ps_rx: Receiver<()>,
 	       jack_client_addr: usize
     ) -> Sequencer {
 	let sync = st_sync::client::Client::new();
 	Sequencer { midi_tx, sync, ps_rx, jack_client_addr }
     }
-    pub fn start(self, mut seq: Sequence<'a>) {
+    pub fn start(self) {
 	let client_pointer: *const j::jack_client_t = std::ptr::from_exposed_addr(self.jack_client_addr);
 
 	let mut suppress_err: bool = false;
@@ -171,33 +178,20 @@ impl <'a> Sequencer <'a>{
     	    j::jack_transport_query(client_pointer, pos);
 
 	    println!("next beat frame at this point: {:?}", next_beat_frame);
-//	    let mut seq = Sequence::new((*pos).beats_per_bar, next_beat_frame, 1);
-
 	    
-	    // let two: &[u8] = &[2; 1];
-	    // let three: &[u8] = &[3; 1];
-	    
-//	    let zero: &[u8] = &[0; 1];
-//	    let bytes: &mut [u8] = vec![0; 3];
-
-    	    
-	    //	    let boom = note_map::sonikboom_on();
-	    // let mut seq = Sequence::new((*pos).beats_per_bar, next_beat_frame, 1);
-
-	    // let zero = note_map::c1_on();
+	    let mut seq = Sequence::new((*pos).beats_per_bar, next_beat_frame, 1);
 
 
-	    // 	let rm0 = jack::RawMidi { time: 0, bytes: &zero };
 
-	    // seq.add_notes(rm0, 4, 0, Crotchet);
+	    let n_0 = note_map::c1_on();
+	    seq.add_notes(n_0, 4, 0, Crotchet);
+	    let n_1 = note_map::c1_on();
+	    seq.add_notes(n_1, 4, 1, Crotchet);
+	    let n_2 = note_map::c1_on();
+	    seq.add_notes(n_2, 4, 2, Crotchet);
+	    let n_3 = note_map::c1_on();
+	    seq.add_notes(n_3, 4, 3, Crotchet);
 
-//    	    let mut rm1 = jack::RawMidi { time: 0, bytes: zero.as_mut_slice() };
-//    	    let mut rm2 = jack::RawMidi { time: 0, bytes: zero.as_mut_slice() };
-//    	    let mut rm3 = jack::RawMidi { time: 0, bytes: zero.as_mut_slice() };
-//
-//	    seq.add_notes(rm1, 4, 1, Crotchet);
-//	    seq.add_notes(rm2, 4, 2, Crotchet);
-//	    seq.add_notes(rm3, 4, 3, Crotchet);
 	    loop {
 	    	let state = j::jack_transport_query(client_pointer, pos);
 		match self.ps_rx.try_recv(){
@@ -214,9 +208,9 @@ impl <'a> Sequencer <'a>{
 
 		for signal in midi_vec {
 		    println!("{:?}", signal);
-		    self.midi_tx.send(*signal);
+		    let om = OwnedMidi { time: signal.time, bytes: signal.bytes.to_owned() };
+		    self.midi_tx.send(om);
 		}
-
 	    }
 	}
     }

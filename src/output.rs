@@ -3,10 +3,10 @@ use tokio::task;
 use crossbeam_channel::*;
 use std::mem::MaybeUninit;
 use crate::beat_values::*;
-use crate::sequencer::{Sequencer, Sequence};
+use crate::sequencer::{Sequencer, OwnedMidi};
 use std::{thread, time};
 use crate::note_map;
-
+use jack::RawMidi;
 pub struct Output;
 
 impl Output {
@@ -15,7 +15,7 @@ impl Output {
     }
     pub async fn jack_output(self)  {
 	//carries midi signals
-        let (midi_tx, midi_rx) = bounded(1000);
+        let (midi_tx, midi_rx) = bounded::<OwnedMidi>(1000);
 	//signals once per process cycle
         let (ps_tx, ps_rx) = bounded(1);
 	
@@ -39,7 +39,8 @@ impl Output {
 
 		match midi_rx.try_recv() {
 		    Ok(msg) => {
-			out.write(&msg);
+			let rm = RawMidi { time: msg.time, bytes: &msg.bytes };
+			out.write(&rm);
 			()
 		    }
 		    Err(e) => ()
@@ -52,14 +53,6 @@ impl Output {
 
 	let mut sequencer = Sequencer::new(midi_tx, ps_rx, client_pointer.expose_addr());
 
-	let bogus = 24000;
-	    let mut seq = Sequence::new(4.0 , bogus, 1);
-
-
-    	let rm0 = jack::RawMidi { time: 0, bytes: note_map::c1_on().as_slice() };
-
-	    seq.add_notes(rm0, 4, 0, Crotchet);
-
-	sequencer.start(seq);
+	sequencer.start();
     }
 }
