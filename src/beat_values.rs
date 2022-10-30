@@ -11,3 +11,8 @@ pub const EighthNote: BeatValue = 0.5;
 pub const Semiquaver: BeatValue = 0.25;
 pub const SixteenthNote: BeatValue = 0.25;
 
+pub fn tuplet(note_type: BeatValue, n_tuplet: u16) -> BeatValue {
+    let ret = note_type * 2.0 / n_tuplet as f32;
+    println!("tuplet value: {:?}", ret);
+    ret
+}

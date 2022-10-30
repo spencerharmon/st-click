@@ -58,7 +58,7 @@ impl Sequence {
 	let mut beat = 0;
 	for i in 0..self.length {
 	    let v = &mut self.seq.get_mut(i as usize).unwrap();
-	    if i as f32 % frames < 0.001 {
+	    if i as f32 % frames < 1.0 {
 		beat = beat + 1;
 		println!("frame matches beat value");
 		//frame matches beat value
@@ -183,15 +183,19 @@ impl Sequencer {
 
 
 
-	    let n_0 = note_map::c1_on();
-	    seq.add_notes(n_0, 4, 0, Crotchet);
-	    let n_1 = note_map::c1_on();
-	    seq.add_notes(n_1, 4, 1, Crotchet);
-	    let n_2 = note_map::c1_on();
-	    seq.add_notes(n_2, 4, 2, Crotchet);
-	    let n_3 = note_map::c1_on();
-	    seq.add_notes(n_3, 4, 3, Crotchet);
-
+	    let n_0 = note_map::cminus1_on();
+	    seq.add_notes(n_0, 1, 0, Crotchet);
+	    // let n_1 = note_map::dflat1_on();
+	    // seq.add_notes(n_1, 4, 1, Crotchet);
+	    // let n_2 = note_map::dminus1_on();
+	    // seq.add_notes(n_2, 4, 2, Crotchet);
+	    // let n_3 = note_map::eflat1_on();
+	    // seq.add_notes(n_3, 4, 3, Crotchet);
+	    // let n_4 = note_map::dflat1_on();
+	    // seq.add_notes(n_4, 1, 0, tuplet(HalfNote, 3));
+	    let n_5 = note_map::dflat1_on();
+	    seq.add_notes(n_5, 1, 0, tuplet(HalfNote, 7));
+	    
 	    loop {
 	    	let state = j::jack_transport_query(client_pointer, pos);
 		match self.ps_rx.try_recv(){
