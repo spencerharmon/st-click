@@ -3,33 +3,21 @@
 mod output;
 mod sequencer;
 mod beat_values;
-mod note_map;
+mod note_utils;
+mod config;
 use st_sync;
 use tokio;
 use std::{thread, time};
+use clap::Parser;
+
+#[derive(Parser)]
+struct Cli {
+    sequence_name: String,
+}
 
 #[tokio::main]
 async fn main() {
-//    let sync_client = st_sync::client::Client::new();
-
-
+    let cli = Cli::parse();
     let o = output::Output::new();
-    o.jack_output().await;
-
-    loop {
-	thread::sleep(time::Duration::from_millis(15));
-    }
-    // let mut suppress_err: bool = false;
-    // loop {
-    // 	match sync_client.recv_next_beat_frame() {
-    // 	    Ok(val) => println!("{:?}", val),
-    // 	    Err(message) => {
-    // 		if !suppress_err {
-    // 		    println!("{}", message);
-    // 		}
-    // 		suppress_err = true;
-		    
-    // 	    }
-    // 	}
-    // }
+    o.jack_output(cli.sequence_name).await;
 }

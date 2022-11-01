@@ -5,7 +5,6 @@ use std::mem::MaybeUninit;
 use crate::beat_values::*;
 use crate::sequencer::{Sequencer, OwnedMidi};
 use std::{thread, time};
-use crate::note_map;
 use jack::RawMidi;
 pub struct Output;
 
@@ -13,7 +12,7 @@ impl Output {
     pub fn new() -> Output {
         Output { }
     }
-    pub async fn jack_output(self)  {
+    pub async fn jack_output(self, sequence_name: String)  {
 	//carries midi signals
         let (midi_tx, midi_rx) = bounded::<OwnedMidi>(1000);
 	//signals once per process cycle
@@ -51,7 +50,7 @@ impl Output {
         );
         let active_client = client.activate_async((), process).unwrap();
 
-	let mut sequencer = Sequencer::new(midi_tx, ps_rx, client_pointer.expose_addr());
+	let mut sequencer = Sequencer::new(midi_tx, ps_rx, client_pointer.expose_addr(), sequence_name);
 
 	sequencer.start();
     }

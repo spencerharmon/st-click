@@ -1,0 +1,19 @@
+---
+backbeat:
+  - note: "C-1"
+    every: 2
+    beat_value: 1.0
+  - note: "D#/Eb1"
+    every: 2
+    skip: 1
+    beat_value: 1.0
+4_against_7:
+  - note: "C-1"
+    every: 1
+    beat_value: 1.0
+  - note: "D#/Eb1"
+    every: 1
+    beat_value: 2.0
+    tuplet: 7
+
+

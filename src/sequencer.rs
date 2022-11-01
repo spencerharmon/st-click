@@ -3,7 +3,8 @@ use jack::jack_sys as j;
 use crossbeam_channel::*;
 use std::mem::MaybeUninit;
 use std::{thread, time};
-use crate::note_map;
+//use crate::note_map;
+use crate::config::Config;
 
 type OwnedMidiBytes = Vec<u8>;
 
@@ -55,22 +56,19 @@ impl Sequence {
     pub fn add_notes(&mut self, signal: OwnedMidiBytes, every_n: u16, skip_n: u16, beat_value: BeatValue){
 	let frames = beat_value * self.frames_per_beat as f32 / 2.0;
 	let mut n = skip_n;
-	let mut beat = 0;
+	let mut beat: i32 = 0;
 	for i in 0..self.length {
 	    let v = &mut self.seq.get_mut(i as usize).unwrap();
 	    if i as f32 % frames < 1.0 {
-		beat = beat + 1;
-		println!("frame matches beat value");
 		//frame matches beat value
-
-		if n == 0 && (beat - skip_n - 1) % every_n == 0 {
-		    println!("n beats have been skipped. go time.");
+		if n == 0 && (beat - skip_n as i32) % every_n as i32 == 0 {
 		    //n beats have been skipped. go time.
 		    v.push(signal.to_owned());
 		    n = 0;
-		} else if n >= 1{
+		} else if n > 0 {
 		    n = n - 1;
 		}
+		beat = beat + 1;
 	    }
 	}
     }
@@ -91,14 +89,11 @@ impl Sequence {
 	let nframes = pos_frame - self.last_frame;
 
 	if beat_this_cycle {
-	    println!("{:?}, {:?}, {:?}", self.last_frame, next_beat_frame, pos_frame);
 	    if self.last_frame == 0 {
 		beat_frame = 1;
 	    } else {
 		beat_frame = next_beat_frame - self.last_frame;
 	    }
-	    println!("{:?}", beat_frame);
-	    println!("{:?}", nframes);
 	}
 
 
@@ -114,10 +109,7 @@ impl Sequence {
 		    ret.push(om);
 		}
 	    }
-//	    println!("{:?} {:?} {:?} {:?}", beat_this_cycle, i, beat_frame, nframes);
 	    if beat_this_cycle && i == beat_frame {
-		println!("final beat {:?}", final_beat);
-		println!("beat_counter {:?}", self.beat_counter);
 		if self.beat_counter == self.n_beats {
 		    self.beat_counter = 1;
 		} else {
@@ -140,17 +132,20 @@ pub struct Sequencer{
     midi_tx: Sender<OwnedMidi>,
     sync: st_sync::client::Client,
     ps_rx: Receiver<()>,
-    jack_client_addr: usize
+    jack_client_addr: usize,
+    sequence_name: String
 }
 impl Sequencer {
     pub fn new(midi_tx: Sender<OwnedMidi>,
 	       ps_rx: Receiver<()>,
-	       jack_client_addr: usize
+	       jack_client_addr: usize,
+	       sequence_name: String
     ) -> Sequencer {
 	let sync = st_sync::client::Client::new();
-	Sequencer { midi_tx, sync, ps_rx, jack_client_addr }
+	Sequencer { midi_tx, sync, ps_rx, jack_client_addr, sequence_name }
     }
     pub fn start(self) {
+	let config = Config::new();
 	let client_pointer: *const j::jack_client_t = std::ptr::from_exposed_addr(self.jack_client_addr);
 
 	let mut suppress_err: bool = false;
@@ -182,20 +177,8 @@ impl Sequencer {
 	    let mut seq = Sequence::new((*pos).beats_per_bar, next_beat_frame, 1);
 
 
+	    config.apply_sequence(&mut seq, self.sequence_name);
 
-	    let n_0 = note_map::cminus1_on();
-	    seq.add_notes(n_0, 1, 0, Crotchet);
-	    // let n_1 = note_map::dflat1_on();
-	    // seq.add_notes(n_1, 4, 1, Crotchet);
-	    // let n_2 = note_map::dminus1_on();
-	    // seq.add_notes(n_2, 4, 2, Crotchet);
-	    // let n_3 = note_map::eflat1_on();
-	    // seq.add_notes(n_3, 4, 3, Crotchet);
-	    // let n_4 = note_map::dflat1_on();
-	    // seq.add_notes(n_4, 1, 0, tuplet(HalfNote, 3));
-	    let n_5 = note_map::dflat1_on();
-	    seq.add_notes(n_5, 1, 0, tuplet(HalfNote, 7));
-	    
 	    loop {
 	    	let state = j::jack_transport_query(client_pointer, pos);
 		match self.ps_rx.try_recv(){
