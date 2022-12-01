@@ -77,16 +77,13 @@ impl Sequence {
     }
 
     fn process_position(&mut self,
-			    pos_frame: u64,
-			    next_beat_frame: u64
+			pos_frame: u64,
+			next_beat_frame: u64,
+			beat_this_cycle: bool
+			
     ) -> Vec<OwnedMidi> {
 	let mut ret = Vec::new();
-	let mut beat_this_cycle = false;
-	if ((self.last_frame < next_beat_frame) &&
-	    (next_beat_frame <= pos_frame)) ||
-	    self.last_frame == 0 {
-			beat_this_cycle = true;
-	}
+
 	let final_beat = self.beat_counter == self.n_beats;
 	let mut beat_frame = 1;
 	let nframes = pos_frame - self.last_frame;
@@ -210,13 +207,14 @@ impl Sequencer {
 		continue
 	    }
 
-	    let midi_vec = &seq.process_position(pos_frame as u64, next_beat_frame);
+	    let midi_vec = &seq.process_position(pos_frame as u64, next_beat_frame, beat_this_cycle);
 
 	    for signal in midi_vec {
 		println!("{:?}", signal);
 		let om = OwnedMidi { time: signal.time, bytes: signal.bytes.to_owned() };
 		self.midi_tx.send(om);
 	    }
+
 	    governor_on = true;
 	}
     }
