@@ -152,53 +152,74 @@ impl Sequencer {
 
 	let mut next_beat_frame = 0;
 
-	loop {
-	    match self.sync.recv_next_beat_frame() {
-		Ok(val) => {
-		    next_beat_frame = val;
-		    break;
-		}
-		Err(message) => {
-		    if !suppress_err {
-			println!("{}", message);
-		    }
-		    suppress_err = true;
-		}
-	    }
-	}
-	let mut first = true;
+	let mut pos = MaybeUninit::uninit().as_mut_ptr();
 
+	let mut beats_per_bar = 0.0;
 	unsafe {
-	    let mut pos = MaybeUninit::uninit().as_mut_ptr();
     	    j::jack_transport_query(client_pointer, pos);
+	    beats_per_bar = (*pos).beats_per_bar;
+	}
 
-	    println!("next beat frame at this point: {:?}", next_beat_frame);
-	    
-	    let mut seq = Sequence::new((*pos).beats_per_bar, next_beat_frame, 1);
-
-
+	
+	// use first beat frame for sequence calculations
+	loop {
+	if let Ok(first_beat_frame) = self.sync.recv_next_beat_frame() {
+	    let mut seq = Sequence::new(beats_per_bar, first_beat_frame, 1);
+	    let mut i = 1;
 	    config.apply_sequence(&mut seq, self.sequence_name);
 
+	    // delay for remainder of first bar
 	    loop {
-	    	let state = j::jack_transport_query(client_pointer, pos);
-		match self.ps_rx.try_recv(){
-		    Ok(()) => (),
-		    Err(_) => continue
+		match self.sync.recv_next_beat_frame() {
+		    Ok(val) => {
+			next_beat_frame = val;
+			i = i + 1;
+			if i as f32 == beats_per_bar {
+			    break;
+			}
+		    }
+		    Err(message) => {
+			if !suppress_err {
+			    println!("{}", message);
+			}
+			suppress_err = true;
+		    }
+		}
+	    }
+
+	    let mut governor_on = true;
+	    let mut pos_frame = 0;
+	    let mut last_frame = 0;
+	    loop {
+		unsafe {
+		    let state = j::jack_transport_query(client_pointer, pos);
+		    pos_frame = (*pos).frame;
+		}
+		if let Ok(val) = self.sync.recv_next_beat_frame() {
+		    next_beat_frame = val;
+		}
+		let beat_this_cycle = next_beat_frame > last_frame as u64 && next_beat_frame <= pos_frame as u64;
+
+    		if let Ok(()) = self.ps_rx.try_recv(){
+		    governor_on = false;
+		}
+		if governor_on && !beat_this_cycle {
+		    continue
 		}
 
-		match self.sync.recv_next_beat_frame() {
-		    Ok(val) => next_beat_frame = val,
-		    Err(_) => ()
-		}
-		
-		let midi_vec = &seq.process_position((*pos).frame as u64, next_beat_frame);
+
+		let midi_vec = &seq.process_position(pos_frame as u64, next_beat_frame);
 
 		for signal in midi_vec {
 		    println!("{:?}", signal);
 		    let om = OwnedMidi { time: signal.time, bytes: signal.bytes.to_owned() };
 		    self.midi_tx.send(om);
 		}
+		governor_on = true;
+		last_frame = pos_frame;
+
 	    }
+	}
 	}
     }
 }
