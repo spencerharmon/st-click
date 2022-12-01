@@ -157,13 +157,14 @@ impl Sequencer {
 
 	let mut pos = MaybeUninit::uninit().as_mut_ptr();
 
+	let mut pos_frame = 0;
 	let mut beats_per_bar = 0.0;
 	unsafe {
     	    j::jack_transport_query(client_pointer, pos);
 	    beats_per_bar = (*pos).beats_per_bar;
+	    pos_frame = (*pos).frame as u64;
 	}
 
-	
 	// use first beat frame for sequence calculations
 	loop {
 	    if let Ok(first_beat_frame) = self.sync.recv_next_beat_frame() {
@@ -174,46 +175,40 @@ impl Sequencer {
 	let mut seq = Sequence::new(beats_per_bar, next_beat_frame, 1);
 	let mut i = 1;
 	config.apply_sequence(&mut seq, self.sequence_name);
-
-	// delay for remainder of first bar
-	loop {
-	    match self.sync.recv_next_beat_frame() {
-		Ok(val) => {
-		    next_beat_frame = val;
-		    i = i + 1;
-		    if i as f32 == beats_per_bar {
-			break;
-		    }
-		}
-		Err(message) => {
-		    if !suppress_err {
-			println!("{}", message);
-		    }
-		    suppress_err = true;
-		}
-	    }
-	}
-
+	
 	let mut governor_on = true;
-	let mut pos_frame = 0;
 	let mut last_frame = 0;
+	let mut first = true;
+	let mut beat_counter = 1;
 	loop {
 	    unsafe {
 		let state = j::jack_transport_query(client_pointer, pos);
-		pos_frame = (*pos).frame;
+		pos_frame = (*pos).frame as u64;
 	    }
 	    if let Ok(val) = self.sync.recv_next_beat_frame() {
 		next_beat_frame = val;
 	    }
 	    let beat_this_cycle = next_beat_frame > last_frame as u64 && next_beat_frame <= pos_frame as u64;
+	    last_frame = pos_frame;
 
+	    if beat_this_cycle {
+		beat_counter = beat_counter + 1;
+		println!("{}", beat_counter);
+	    }
+	    if first {
+		if beat_this_cycle && beat_counter % beats_per_bar as usize == 1 {
+		    first = false;
+		    seq.set_frame(pos_frame);
+		} else {
+		    continue
+		}
+	    }
 	    if let Ok(()) = self.ps_rx.try_recv(){
 		governor_on = false;
 	    }
 	    if governor_on && !beat_this_cycle {
 		continue
 	    }
-
 
 	    let midi_vec = &seq.process_position(pos_frame as u64, next_beat_frame);
 
@@ -223,8 +218,6 @@ impl Sequencer {
 		self.midi_tx.send(om);
 	    }
 	    governor_on = true;
-	    last_frame = pos_frame;
-
 	}
     }
 }
