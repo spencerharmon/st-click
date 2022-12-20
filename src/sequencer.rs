@@ -41,7 +41,7 @@ impl Sequence {
 	let last_frame = 0;
 
 	let n_beats = (beats_per_bar as u32 * bars) as u16;
-	let beat_counter = 1;
+	let beat_counter = 0;
 	Sequence {
 	    beats_per_bar,
 	    frames_per_beat,
@@ -84,7 +84,6 @@ impl Sequence {
     ) -> Vec<OwnedMidi> {
 	let mut ret = Vec::new();
 
-	let final_beat = self.beat_counter == self.n_beats;
 	let mut beat_frame = 1;
 	let nframes = pos_frame - self.last_frame;
 
@@ -112,11 +111,9 @@ impl Sequence {
 	    if beat_this_cycle && i == beat_frame {
 		if self.beat_counter == self.n_beats {
 		    self.beat_counter = 1;
+		    self.playhead = 0;
 		} else {
 		    self.beat_counter = self.beat_counter + 1;
-		}
-		if final_beat {
-		    self.playhead = 0;
 		}
 	    } else {
 		self.playhead = self.playhead + 1;
@@ -176,7 +173,7 @@ impl Sequencer {
 	let mut governor_on = true;
 	let mut last_frame = 0;
 	let mut first = true;
-	let mut beat_counter = 1;
+	let mut beat_counter = 0;
 	loop {
 	    unsafe {
 		let state = j::jack_transport_query(client_pointer, pos);
@@ -186,20 +183,23 @@ impl Sequencer {
 		next_beat_frame = val;
 	    }
 	    let beat_this_cycle = next_beat_frame > last_frame as u64 && next_beat_frame <= pos_frame as u64;
-	    last_frame = pos_frame;
 
 	    if beat_this_cycle {
 		beat_counter = beat_counter + 1;
 		println!("{}", beat_counter);
 	    }
 	    if first {
-		if beat_this_cycle && beat_counter % beats_per_bar as usize == 1 {
-		    first = false;
-		    seq.set_frame(pos_frame);
-		} else {
-		    continue
-		}
+		if beat_this_cycle &&
+		    beat_counter % beats_per_bar as usize == 0 &&
+		    beat_counter >= beats_per_bar as usize {
+			first = false;
+			seq.set_frame(last_frame);
+		    } else {
+			last_frame = pos_frame;
+			continue
+		    }
 	    }
+	    last_frame = pos_frame;
 	    if let Ok(()) = self.ps_rx.try_recv(){
 		governor_on = false;
 	    }
