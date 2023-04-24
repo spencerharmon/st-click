@@ -160,12 +160,10 @@ impl Sequencer {
 	}
 
 	// use first beat frame for sequence calculations
-	loop {
-	    if let Ok(first_beat_frame) = self.sync.recv_next_beat_frame() {
-		next_beat_frame = first_beat_frame;
-		break
-	    }
+	if let Ok(first_beat_frame) = self.sync.recv_next_beat_frame() {
+	    next_beat_frame = first_beat_frame;
 	}
+
 	let mut seq = Sequence::new(beats_per_bar, next_beat_frame, 1);
 	let mut i = 1;
 	config.apply_sequence(&mut seq, self.sequence_name);
@@ -174,19 +172,24 @@ impl Sequencer {
 	let mut last_frame = 0;
 	let mut first = true;
 	let mut beat_counter = 0;
+	let mut check_for_beat_frame = false;
 	loop {
 	    unsafe {
 		let state = j::jack_transport_query(client_pointer, pos);
 		pos_frame = (*pos).frame as u64;
 	    }
-	    if let Ok(val) = self.sync.recv_next_beat_frame() {
-		next_beat_frame = val;
+	    if check_for_beat_frame {
+	        if let Ok(val) = self.sync.try_recv_next_beat_frame() {
+		    next_beat_frame = val;
+		    check_for_beat_frame = false;
+		}
 	    }
 	    let beat_this_cycle = next_beat_frame > last_frame as u64 && next_beat_frame <= pos_frame as u64;
 
 	    if beat_this_cycle {
 		beat_counter = beat_counter + 1;
 		println!("{}", beat_counter);
+		check_for_beat_frame = true;
 	    }
 	    if first {
 		if beat_this_cycle &&
@@ -202,6 +205,8 @@ impl Sequencer {
 	    last_frame = pos_frame;
 	    if let Ok(()) = self.ps_rx.try_recv(){
 		governor_on = false;
+	    } else {
+		thread::sleep(time::Duration::from_millis(1));
 	    }
 	    if governor_on && !beat_this_cycle {
 		continue
