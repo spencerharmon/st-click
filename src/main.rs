@@ -40,6 +40,12 @@ fn main() {
 		sequence_name: cli.sequence_name.clone(),
 	}));
 
+	// Sequencer control channels (created up front so NSM and GUI
+	// both have a handle to `cmd_tx`).
+	let (cmd_tx, cmd_rx) = unbounded::<sequencer::SequencerCommand>();
+	let (active_tx, active_rx) = unbounded::<String>();
+	let (beat_tx, beat_rx) = unbounded::<u64>();
+
 	// If NSM_URL is set, block on the first /nsm/client/open before
 	// starting JACK so a saved sequence name can replace the CLI arg.
 	if env::var("NSM_URL").is_ok() {
@@ -92,7 +98,7 @@ fn main() {
 				}
 			}
 
-			spawn_nsm_followup(client, session_path, live.clone());
+			spawn_nsm_followup(client, session_path, live.clone(), cmd_tx.clone());
 		});
 	}
 
@@ -100,7 +106,7 @@ fn main() {
 	let o = output::Output::new();
 
 	if cli.no_gui {
-		o.jack_output(sequence_name, None);
+		o.jack_output(sequence_name, None, Some(cmd_rx), None);
 		loop {
 			std::thread::park();
 		}
@@ -110,12 +116,27 @@ fn main() {
 	// combo box. The audio thread loads it again inside `Sequencer::start`.
 	let cfg = config::Config::new();
 	let names = cfg.sequence_names();
-	let state = gui::app_state::AppState::new(sequence_name.clone(), names);
+	let mut state = gui::app_state::AppState::new(sequence_name.clone(), names);
+	state.command_tx = Some(cmd_tx.clone());
 
-	let (beat_tx, beat_rx) = unbounded::<u64>();
-	o.jack_output(sequence_name, Some(beat_tx));
+	// Bridge: whenever the sequencer confirms a sequence change, also
+	// update `live` so the next NSM Save persists the right name.
+	{
+		let live = live.clone();
+		let bridge_rx = active_rx.clone();
+		std::thread::Builder::new()
+			.name("st-click-active-bridge".into())
+			.spawn(move || {
+				while let Ok(name) = bridge_rx.recv() {
+					live.lock().unwrap().sequence_name = name;
+				}
+			})
+			.expect("failed to spawn active-bridge thread");
+	}
 
-	if let Err(e) = gui::run(state, beat_rx) {
+	o.jack_output(sequence_name, Some(beat_tx), Some(cmd_rx), Some(active_tx));
+
+	if let Err(e) = gui::run(state, beat_rx, Some(active_rx)) {
 		eprintln!("eframe exited with error: {e}");
 		std::process::exit(1);
 	}
@@ -125,6 +146,7 @@ fn spawn_nsm_followup(
 	mut client: nsm::Client,
 	session_path: Arc<Mutex<String>>,
 	live: Arc<Mutex<session::Session>>,
+	cmd_tx: crossbeam_channel::Sender<sequencer::SequencerCommand>,
 ) {
 	tokio::spawn(async move {
 		while let Some(evt) = client.rx.recv().await {
@@ -142,12 +164,16 @@ fn spawn_nsm_followup(
 					}
 				}
 				nsm::Event::Open { path, ack, .. } => {
-					// `:switch:` — load the new session's sequence name.
-					// Cannot swap a playing sequence yet (no live control
-					// channel into the sequencer); update LiveConfig so
-					// the next Save reflects it.
+					// `:switch:` — load the new session's sequence name
+					// and request a live swap.
 					match session::load(&path) {
-						Ok(Some(s)) => *live.lock().unwrap() = s,
+						Ok(Some(s)) => {
+							let name = s.sequence_name.clone();
+							*live.lock().unwrap() = s;
+							let _ = cmd_tx.try_send(
+								sequencer::SequencerCommand::SwitchTo(name)
+							);
+						}
 						Ok(None)    => {}
 						Err(e) => {
 							ack.err(-1, format!("load failed: {e}"));
@@ -155,7 +181,7 @@ fn spawn_nsm_followup(
 						}
 					}
 					*session_path.lock().unwrap() = path;
-					ack.ok("switched (live sequence change requires restart)");
+					ack.ok("switched");
 				}
 				nsm::Event::ShowGui | nsm::Event::HideGui => {
 					// GUI show/hide not yet routed through the eframe
