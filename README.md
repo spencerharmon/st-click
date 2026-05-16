@@ -47,6 +47,7 @@ the following fields:
 | `every`      | integer      | no (=1)  | Play on every Nth slot (a slot is one `beat_value`). `every: 2` halves the rate. |
 | `skip`       | integer      | no (=0)  | Skip the first N slots before the pattern begins repeating.                    |
 | `tuplet`     | integer      | no       | Convert `beat_value` into an *N*-tuplet over 2 of that value (e.g. `tuplet: 3` on a quarter gives a quarter-note triplet; `tuplet: 7` gives a septuplet over 2 quarters). |
+| `offset`     | float        | no (=0)  | Shift every emitted hit by this many *quarter-note beats*. Signed (negative = anticipation / push-beat). Independent of `beat_value`, so composes with `tuplet`. Wraps modulo the sequence span. |
 
 Note-name format: `<letter><accidental?><octave>` — examples: `C4`, `A0`,
 `G9`, `C-1`. Sharps/flats are written together as `C#/Db4`, `D#/Eb1`, etc.

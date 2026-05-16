@@ -48,14 +48,25 @@ impl Config {
 	    let mut skip: u16 = 0;
 	    if hash.contains_key(&yaml::Yaml::String("skip".to_string())) {
 		skip = note["skip"].as_i64().unwrap() as u16;
-	    }	    
-	    seq.add_notes(
+	    }
+	    let mut offset: f32 = 0.0;
+	    if hash.contains_key(&yaml::Yaml::String("offset".to_string())) {
+		// YAML may give us either a float (`1.5`) or an int (`2`);
+		// accept both transparently.
+		let raw = &note["offset"];
+		offset = raw
+		    .as_f64()
+		    .or_else(|| raw.as_i64().map(|i| i as f64))
+		    .expect("offset present but not numeric") as f32;
+	    }
+	    seq.add_notes_with_offset(
 		note_utils::get_bytes_for_note_str(
 		    note["note"].as_str().expect("Note string absent or invalid").to_string()
 		),
 		every,
 		skip,
-		beat_value
+		beat_value,
+		offset,
 	    );
 	}
     }
