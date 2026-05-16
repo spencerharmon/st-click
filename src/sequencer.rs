@@ -178,7 +178,7 @@ impl Sequencer {
 	    next_beat_frame = first_beat_frame;
 	}
 
-	let mut seq = Sequence::new(beats_per_bar, next_beat_frame, 1);
+	let mut seq = Sequence::new(beats_per_bar, next_beat_frame, config.sequence_bars(&self.sequence_name));
 	let mut i = 1;
 	config.apply_sequence(&mut seq, self.sequence_name);
 	
@@ -472,5 +472,57 @@ mod tests {
 
         assert_eq!(populated_slot_count(&s), 8,
             "two interleaved quarter parts should yield 8 populated slots");
+    }
+
+    // ----------------------------------------------------------------------
+    // Multi-bar sequences. The `bars` parameter to `Sequence::new` scales
+    // the buffer length, which means a single `add_notes` call lays out
+    // hits across the full multi-bar span.
+    // ----------------------------------------------------------------------
+
+    #[test]
+    fn multi_bar_buffer_length_scales_linearly() {
+        let one = Sequence::new(4.0, 100, 1);
+        let two = Sequence::new(4.0, 100, 2);
+        let four = Sequence::new(4.0, 100, 4);
+        assert_eq!(two.seq.len(), 2 * one.seq.len());
+        assert_eq!(four.seq.len(), 4 * one.seq.len());
+    }
+
+    #[test]
+    fn quarters_in_two_bar_44_yield_eight_hits() {
+        let mut s = Sequence::new(4.0, 100, 2);
+        s.add_notes(vec![0x90, 60, 127], 1, 0, QuarterNote);
+        let hits = populated_indices(&s);
+        assert_eq!(hits.len(), 8,
+            "2 bars of 4/4 quarters should produce 8 hits, not 4");
+    }
+
+    #[test]
+    fn skip_three_quarters_works_across_bar_boundary() {
+        // In a 2-bar 4/4 buffer, skip_n=3 every_n=1 should fire on
+        // quarters 4, 5, 6, 7 (counting from 0 across both bars) — i.e.
+        // the entire second bar. Verifies that `skip` operates over the
+        // sequence span, not the bar.
+        let mut s = Sequence::new(4.0, 100, 2);
+        s.add_notes(vec![0x90, 60, 127], 1, 3, QuarterNote);
+        let hits = populated_indices(&s);
+        assert_eq!(hits.len(), 5,
+            "skip 3 of 8 quarters should leave 5 hits");
+    }
+
+    #[test]
+    fn offset_wraps_within_multi_bar_span() {
+        // Offset of 5 beats in a 2-bar (8-beat) 4/4 sequence wraps to
+        // an effective offset of 5 inside the span. The hit set must
+        // equal that of offset 5.0 directly (trivially) and also of
+        // offset -3.0 (5 - 8 = -3, wrap-equivalent).
+        let mut a = Sequence::new(4.0, 100, 2);
+        a.add_notes_with_offset(vec![0x90, 60, 127], 1, 0, QuarterNote, 5.0);
+        let mut b = Sequence::new(4.0, 100, 2);
+        b.add_notes_with_offset(vec![0x90, 60, 127], 1, 0, QuarterNote, -3.0);
+        let mut hits_a = populated_indices(&a); hits_a.sort();
+        let mut hits_b = populated_indices(&b); hits_b.sort();
+        assert_eq!(hits_a, hits_b);
     }
 }
