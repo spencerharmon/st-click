@@ -146,6 +146,38 @@ pub fn str_to_note(note: &str) -> Note {
         "F9" => Note::F9,
         "F#/Gb9" => Note::Gb9,
         "G9" => Note::G9,
-	_ => panic!("invalid note: {:?}", note)
+ 	_ => panic!("invalid note: {:?}", note)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn str_to_note_known_values() {
+        assert_eq!(str_to_note("C4"), Note::C4);
+        assert_eq!(str_to_note("A4"), Note::A4);
+        assert_eq!(str_to_note("C-1"), Note::CMinus1);
+        assert_eq!(str_to_note("G9"), Note::G9);
+        assert_eq!(str_to_note("C#/Db4"), Note::Db4);
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid note")]
+    fn str_to_note_invalid_panics() {
+        let _ = str_to_note("not-a-note");
+    }
+
+    #[test]
+    fn note_on_bytes_have_correct_status_and_velocity() {
+        let bytes = get_bytes_for_note_str("C4".to_string());
+        // Note-On, channel 1 -> status byte 0x90
+        assert_eq!(bytes.len(), 3);
+        assert_eq!(bytes[0], 0x90);
+        // C4 in wmidi = MIDI note number 60
+        assert_eq!(bytes[1], 60);
+        // Velocity 127
+        assert_eq!(bytes[2], 127);
     }
 }

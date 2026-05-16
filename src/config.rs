@@ -1,36 +1,38 @@
 extern crate yaml_rust;
-use std::mem::MaybeUninit;
 use yaml_rust::*;
-use home;
 use crate::sequencer::Sequence;
 use crate::note_utils;
 use crate::beat_values::tuplet;
+use st_lib::config::find_config;
 pub struct Config {
     yaml: yaml::Yaml
 }
 
 impl Config {
     pub fn new() -> Config {
-	let mut paths: Vec<String> = Vec::new();
-	if let Some(home) = home::home_dir() {
-	    paths.push(format!("{}/.config/st-tools/st-click.yaml", home.display()).to_string());
-	}
-	paths.push("/etc/st-tools/st-click.yaml".to_string());
+	let path = find_config("st-click").expect("no configuration found");
+	let s = std::fs::read_to_string(&path).expect("failed to read config file");
+	let docs = YamlLoader::load_from_str(s.as_str()).unwrap();
+	let yaml = &docs[0];
+	println!("loaded config: {}", path.display());
+	Config { yaml: yaml.to_owned() }
+    }
 
-	for p in paths {
-	    match  std::fs::read_to_string(p) {
-		Ok(s) => {
-		    let docs = YamlLoader::load_from_str(s.as_str()).unwrap();
-		    let yaml = &docs[0];
-		    println!("{:?}", s);
-		    return Config { yaml: yaml.to_owned() };
+    /// Top-level keys in the loaded YAML — i.e. the list of sequence
+    /// names the user can pick. Returned in insertion order (yaml-rust
+    /// preserves Hash key order).
+    pub fn sequence_names(&self) -> Vec<String> {
+	let mut out = Vec::new();
+	if let Some(h) = self.yaml.as_hash() {
+	    for (k, _) in h {
+		if let Some(s) = k.as_str() {
+		    out.push(s.to_string());
 		}
-		Err(_) => continue
 	    }
 	}
-	panic!("no configuration found");
+	out
     }
-    pub fn apply_sequence(self, seq: &mut Sequence, seq_name: String) {
+	pub fn apply_sequence(self, seq: &mut Sequence, seq_name: String) {
 	let yaml_vec = self.yaml[seq_name.as_str()].as_vec().expect("sequence name not found");
 	for i in 0..yaml_vec.len() {
 	    let note = &yaml_vec[i];
