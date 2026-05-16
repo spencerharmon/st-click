@@ -1,9 +1,9 @@
-use jack::jack_sys as j;
 use tokio::task;
 use crossbeam_channel::*;
-use std::mem::MaybeUninit;
 use crate::beat_values::*;
-use crate::sequencer::{Sequencer, OwnedMidi};
+use crate::sequencer::Sequencer;
+use st_lib::owned_midi::OwnedMidi;
+use st_lib::jack_ptr;
 use std::{thread, time};
 use jack::RawMidi;
 pub struct Output;
@@ -50,7 +50,7 @@ impl Output {
         );
         let active_client = client.activate_async((), process).unwrap();
 
-	let mut sequencer = Sequencer::new(midi_tx, ps_rx, client_pointer.expose_addr(), sequence_name);
+	let mut sequencer = Sequencer::new(midi_tx, ps_rx, jack_ptr::expose_client(client_pointer), sequence_name);
 
 	sequencer.start();
     }

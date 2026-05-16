@@ -1,4 +1,3 @@
-#![feature(strict_provenance)]
 
 mod output;
 mod sequencer;

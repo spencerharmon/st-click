@@ -1,18 +1,10 @@
 use crate::beat_values::*;
-use jack::jack_sys as j;
 use crossbeam_channel::*;
-use std::mem::MaybeUninit;
 use std::{thread, time};
 //use crate::note_map;
 use crate::config::Config;
-
-type OwnedMidiBytes = Vec<u8>;
-
-#[derive(Debug)]
-pub struct OwnedMidi {
-    pub time: u32,
-    pub bytes: OwnedMidiBytes
-}
+use st_lib::owned_midi::{OwnedMidi, OwnedMidiBytes};
+use st_lib::{jack_ptr, jack_transport};
 
 fn get_beat_value(base_beat_value: BeatValue, n_dots: u16, n_tuplet: u16) -> f32 {
     ((base_beat_value * 2.0) / n_tuplet as f32) * f32::powf(1.5, n_dots.into())
@@ -143,21 +135,15 @@ impl Sequencer {
     }
     pub fn start(self) {
 	let config = Config::new();
-	let client_pointer: *const j::jack_client_t = std::ptr::from_exposed_addr(self.jack_client_addr);
+	let client_pointer = unsafe { jack_ptr::recover_client(self.jack_client_addr) };
 
 	let mut suppress_err: bool = false;
 
 	let mut next_beat_frame = 0;
 
-	let mut pos = MaybeUninit::uninit().as_mut_ptr();
-
-	let mut pos_frame = 0;
-	let mut beats_per_bar = 0.0;
-	unsafe {
-    	    j::jack_transport_query(client_pointer, pos);
-	    beats_per_bar = (*pos).beats_per_bar;
-	    pos_frame = (*pos).frame as u64;
-	}
+	let snapshot = unsafe { jack_transport::query_transport(client_pointer) };
+	let beats_per_bar = snapshot.beats_per_bar;
+	let mut pos_frame = snapshot.frame;
 
 	// use first beat frame for sequence calculations
 	if let Ok(first_beat_frame) = self.sync.recv_next_beat_frame() {
@@ -174,10 +160,8 @@ impl Sequencer {
 	let mut beat_counter = 0;
 	let mut check_for_beat_frame = false;
 	loop {
-	    unsafe {
-		let state = j::jack_transport_query(client_pointer, pos);
-		pos_frame = (*pos).frame as u64;
-	    }
+	    let snap = unsafe { jack_transport::query_transport(client_pointer) };
+	    pos_frame = snap.frame;
 	    if check_for_beat_frame {
 	        if let Ok(val) = self.sync.try_recv_next_beat_frame() {
 		    next_beat_frame = val;
@@ -222,5 +206,101 @@ impl Sequencer {
 
 	    governor_on = true;
 	}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper: count how many slots in `seq.seq` contain at least one signal.
+    fn populated_slot_count(seq: &Sequence) -> usize {
+        seq.seq.iter().filter(|v| !v.is_empty()).count()
+    }
+
+    /// Helper: collect indices of slots that contain at least one signal.
+    fn populated_indices(seq: &Sequence) -> Vec<usize> {
+        seq.seq
+            .iter()
+            .enumerate()
+            .filter_map(|(i, v)| if !v.is_empty() { Some(i) } else { None })
+            .collect()
+    }
+
+    #[test]
+    fn new_sequence_has_expected_length() {
+        // beats_per_bar = 4, frames_per_beat = 100, bars = 1
+        // length = 4 * 100 * 1 / 2 = 200
+        let s = Sequence::new(4.0, 100, 1);
+        assert_eq!(s.seq.len(), 200);
+        assert_eq!(populated_slot_count(&s), 0);
+    }
+
+    #[test]
+    fn add_notes_on_every_quarter_in_one_bar_44() {
+        // 4/4 bar, 100 frames per beat, 1 bar -> length 200
+        // QuarterNote = 1.0; frames per "slot" = 1.0 * 100 / 2 = 50
+        // every_n=1, skip_n=0 -> 200 / 50 = 4 hits
+        let mut s = Sequence::new(4.0, 100, 1);
+        let signal: OwnedMidiBytes = vec![0x90, 60, 127];
+        s.add_notes(signal, 1, 0, QuarterNote);
+
+        let hits = populated_indices(&s);
+        assert_eq!(hits.len(), 4, "should hit on each quarter beat in the bar");
+        assert_eq!(hits, vec![0, 50, 100, 150]);
+    }
+
+    #[test]
+    fn add_notes_skip_first_n_quarters() {
+        // skip_n=2 -> first 2 quarter positions are skipped, then plays every quarter
+        let mut s = Sequence::new(4.0, 100, 1);
+        let signal: OwnedMidiBytes = vec![0x90, 60, 127];
+        s.add_notes(signal, 1, 2, QuarterNote);
+
+        let hits = populated_indices(&s);
+        assert_eq!(hits, vec![100, 150]);
+    }
+
+    #[test]
+    fn add_notes_every_2_quarters() {
+        // every_n=2, skip_n=0 -> hit on quarters 0, 2 (i.e. half-notes)
+        let mut s = Sequence::new(4.0, 100, 1);
+        let signal: OwnedMidiBytes = vec![0x90, 60, 127];
+        s.add_notes(signal, 2, 0, QuarterNote);
+
+        let hits = populated_indices(&s);
+        assert_eq!(hits, vec![0, 100]);
+    }
+
+    #[test]
+    fn add_notes_eighth_notes_in_one_bar_44() {
+        // EighthNote = 0.5; frames per slot = 0.5 * 100 / 2 = 25
+        // length 200 / 25 = 8 hits
+        let mut s = Sequence::new(4.0, 100, 1);
+        let signal: OwnedMidiBytes = vec![0x90, 60, 127];
+        s.add_notes(signal, 1, 0, EighthNote);
+
+        let hits = populated_indices(&s);
+        assert_eq!(hits.len(), 8);
+        assert_eq!(hits, vec![0, 25, 50, 75, 100, 125, 150, 175]);
+    }
+
+    #[test]
+    fn get_beat_value_no_dots_no_tuplet() {
+        // base * 2 / 1 * 1 = base * 2 -- matches existing impl
+        assert_eq!(get_beat_value(QuarterNote, 0, 1), 2.0);
+    }
+
+    #[test]
+    fn get_beat_value_triplet() {
+        // quarter triplet: 1.0 * 2 / 3 = 0.666...
+        let v = get_beat_value(QuarterNote, 0, 3);
+        assert!((v - (2.0 / 3.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn get_beat_value_dotted_quarter() {
+        // 1 dot = *1.5; quarter dotted: 1.0 * 2 / 1 * 1.5 = 3.0
+        assert_eq!(get_beat_value(QuarterNote, 1, 1), 3.0);
     }
 }
