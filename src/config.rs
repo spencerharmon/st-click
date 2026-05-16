@@ -17,7 +17,22 @@ impl Config {
 	println!("loaded config: {}", path.display());
 	Config { yaml: yaml.to_owned() }
     }
-    pub fn apply_sequence(self, seq: &mut Sequence, seq_name: String) {
+
+    /// Top-level keys in the loaded YAML — i.e. the list of sequence
+    /// names the user can pick. Returned in insertion order (yaml-rust
+    /// preserves Hash key order).
+    pub fn sequence_names(&self) -> Vec<String> {
+	let mut out = Vec::new();
+	if let Some(h) = self.yaml.as_hash() {
+	    for (k, _) in h {
+		if let Some(s) = k.as_str() {
+		    out.push(s.to_string());
+		}
+	    }
+	}
+	out
+    }
+	pub fn apply_sequence(self, seq: &mut Sequence, seq_name: String) {
 	let yaml_vec = self.yaml[seq_name.as_str()].as_vec().expect("sequence name not found");
 	for i in 0..yaml_vec.len() {
 	    let note = &yaml_vec[i];
