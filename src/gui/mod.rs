@@ -13,11 +13,12 @@ use app_state::AppState;
 pub struct App {
 	state: AppState,
 	beat_rx: Receiver<u64>,
+	active_rx: Option<Receiver<String>>,
 }
 
 impl App {
-	pub fn new(state: AppState, beat_rx: Receiver<u64>) -> Self {
-		Self { state, beat_rx }
+	pub fn new(state: AppState, beat_rx: Receiver<u64>, active_rx: Option<Receiver<String>>) -> Self {
+		Self { state, beat_rx, active_rx }
 	}
 
 	fn drain_beats(&mut self) {
@@ -26,11 +27,20 @@ impl App {
 			self.state.last_beat_at = std::time::Instant::now();
 		}
 	}
+
+	fn drain_active(&mut self) {
+		if let Some(rx) = &self.active_rx {
+			while let Ok(name) = rx.try_recv() {
+				self.state.active_sequence = name;
+			}
+		}
+	}
 }
 
 impl eframe::App for App {
 	fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		self.drain_beats();
+		self.drain_active();
 		let ctx = ui.ctx().clone();
 
 		egui::Panel::bottom("status_bar").show_inside(ui, |ui| {
@@ -53,7 +63,11 @@ impl eframe::App for App {
 	}
 }
 
-pub fn run(state: AppState, beat_rx: Receiver<u64>) -> Result<(), eframe::Error> {
+pub fn run(
+	state: AppState,
+	beat_rx: Receiver<u64>,
+	active_rx: Option<Receiver<String>>,
+) -> Result<(), eframe::Error> {
 	let options = eframe::NativeOptions {
 		viewport: egui::ViewportBuilder::default()
 			.with_inner_size([480.0, 280.0])
@@ -66,7 +80,7 @@ pub fn run(state: AppState, beat_rx: Receiver<u64>) -> Result<(), eframe::Error>
 		options,
 		Box::new(move |cc| {
 			cc.egui_ctx.set_visuals(egui::Visuals::dark());
-			Ok(Box::new(App::new(state, beat_rx)))
+			Ok(Box::new(App::new(state, beat_rx, active_rx)))
 		}),
 	)
 }

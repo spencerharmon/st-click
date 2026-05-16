@@ -41,7 +41,14 @@ impl Config {
     }
 
     pub fn apply_sequence(self, seq: &mut Sequence, seq_name: String) {
-	let node = &self.yaml[seq_name.as_str()];
+	self.apply_sequence_borrowed(seq, &seq_name);
+    }
+
+    /// Like `apply_sequence` but borrows `self` so the same Config can
+    /// be reused across multiple sequence builds (e.g. when the
+    /// sequencer swaps between named sequences at runtime).
+    pub fn apply_sequence_borrowed(&self, seq: &mut Sequence, seq_name: &str) {
+	let node = &self.yaml[seq_name];
 	let yaml_vec = notes_from_yaml(node)
 	    .expect("sequence name not found or has no notes");
 	for i in 0..yaml_vec.len() {

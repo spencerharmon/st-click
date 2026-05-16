@@ -1,5 +1,5 @@
 use crossbeam_channel::*;
-use crate::sequencer::Sequencer;
+use crate::sequencer::{Sequencer, SequencerCommand};
 use st_lib::owned_midi::OwnedMidi;
 use st_lib::jack_ptr;
 use jack::RawMidi;
@@ -19,12 +19,21 @@ impl Output {
     /// time the sequencer detects a beat boundary. Pass `None` for
     /// headless runs.
     ///
+    /// `command_rx` / `active_tx` carry runtime control messages between
+    /// the GUI (or NSM) and the sequencer:
+    ///   - `command_rx`: `SwitchTo(name)` requests; sequencer applies at
+    ///     the next bar boundary.
+    ///   - `active_tx`: sequencer pushes the currently-playing sequence
+    ///     name after each switch lands.
+    ///
     /// The JACK active-client guard is intentionally leaked so JACK
     /// keeps running for the lifetime of the process.
     pub fn jack_output(
 	&self,
 	sequence_name: String,
 	beat_tx: Option<Sender<u64>>,
+	command_rx: Option<Receiver<SequencerCommand>>,
+	active_tx: Option<Sender<String>>,
     ) {
 	// carries midi signals
         let (midi_tx, midi_rx) = bounded::<OwnedMidi>(1000);
@@ -76,6 +85,8 @@ impl Output {
 		    client_addr,
 		    sequence_name,
 		    beat_tx,
+		    command_rx,
+		    active_tx,
 		);
 		sequencer.start();
 	    })

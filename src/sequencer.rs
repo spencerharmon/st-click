@@ -141,6 +141,13 @@ impl Sequence {
     
 }
 
+/// Commands the GUI / NSM can send into a running sequencer.
+pub enum SequencerCommand {
+    /// Switch to a different named sequence. The swap is deferred until
+    /// the next bar boundary so it lands musically.
+    SwitchTo(String),
+}
+
 pub struct Sequencer{
     midi_tx: Sender<OwnedMidi>,
     sync: st_sync::client::Client,
@@ -150,6 +157,11 @@ pub struct Sequencer{
     /// Optional GUI sink: each detected beat boundary is pushed here as
     /// the running 1-based beat counter. None when running headless.
     beat_tx: Option<Sender<u64>>,
+    /// Optional command source (sequence switch, ...). None when headless.
+    command_rx: Option<Receiver<SequencerCommand>>,
+    /// Optional GUI feedback: name of the sequence the audio thread is
+    /// actually playing right now (sent after each switch lands).
+    active_tx: Option<Sender<String>>,
 }
 impl Sequencer {
     pub fn new(midi_tx: Sender<OwnedMidi>,
@@ -157,11 +169,13 @@ impl Sequencer {
 	       jack_client_addr: usize,
 	       sequence_name: String,
 	       beat_tx: Option<Sender<u64>>,
+	       command_rx: Option<Receiver<SequencerCommand>>,
+	       active_tx: Option<Sender<String>>,
     ) -> Sequencer {
 	let sync = st_sync::client::Client::new();
-	Sequencer { midi_tx, sync, ps_rx, jack_client_addr, sequence_name, beat_tx }
+	Sequencer { midi_tx, sync, ps_rx, jack_client_addr, sequence_name, beat_tx, command_rx, active_tx }
     }
-    pub fn start(self) {
+    pub fn start(mut self) {
 	let config = Config::new();
 	let client_pointer = unsafe { jack_ptr::recover_client(self.jack_client_addr) };
 
@@ -178,16 +192,34 @@ impl Sequencer {
 	    next_beat_frame = first_beat_frame;
 	}
 
-	let mut seq = Sequence::new(beats_per_bar, next_beat_frame, config.sequence_bars(&self.sequence_name));
+	let mut seq = build_sequence(&config, &self.sequence_name, beats_per_bar, next_beat_frame);
 	let mut i = 1;
-	config.apply_sequence(&mut seq, self.sequence_name);
-	
+	// Notify the GUI which sequence is actually playing.
+	if let Some(tx) = &self.active_tx {
+	    let _ = tx.try_send(self.sequence_name.clone());
+	}
+
 	let mut governor_on = true;
 	let mut last_frame = 0;
 	let mut first = true;
 	let mut beat_counter = 0;
 	let mut check_for_beat_frame = false;
+	let mut pending_switch: Option<String> = None;
 	loop {
+	    // Drain any pending command(s); only the most recent SwitchTo
+	    // matters — collapse them so a rapid double-click doesn't queue.
+	    if let Some(rx) = &self.command_rx {
+		while let Ok(cmd) = rx.try_recv() {
+		    match cmd {
+			SequencerCommand::SwitchTo(name) => {
+			    if name != self.sequence_name {
+				pending_switch = Some(name);
+			    }
+			}
+		    }
+		}
+	    }
+
 	    let snap = unsafe { jack_transport::query_transport(client_pointer) };
 	    pos_frame = snap.frame;
 	    if check_for_beat_frame {
@@ -206,6 +238,23 @@ impl Sequencer {
 		    // Non-blocking; if the GUI is gone the audio thread
 		    // keeps running.
 		    let _ = tx.try_send(beat_counter as u64);
+		}
+
+		// Apply pending sequence swap at bar boundary so it lands
+		// musically. `beat_counter % beats_per_bar == 0` means we
+		// just crossed into a new bar.
+		if let Some(new_name) = pending_switch.take() {
+		    if (beat_counter as f32) % beats_per_bar == 0.0 {
+			seq = build_sequence(&config, &new_name, beats_per_bar, next_beat_frame);
+			seq.set_frame(last_frame);
+			self.sequence_name = new_name.clone();
+			if let Some(tx) = &self.active_tx {
+			    let _ = tx.try_send(new_name);
+			}
+		    } else {
+			// Not a bar boundary yet — keep the request pending.
+			pending_switch = Some(new_name);
+		    }
 		}
 	    }
 	    if first {
@@ -240,6 +289,19 @@ impl Sequencer {
 	    governor_on = true;
 	}
     }
+}
+
+/// Build a fully-populated `Sequence` from the named config entry.
+fn build_sequence(
+    config: &Config,
+    sequence_name: &str,
+    beats_per_bar: f32,
+    frames_per_beat: u64,
+) -> Sequence {
+    let bars = config.sequence_bars(sequence_name);
+    let mut seq = Sequence::new(beats_per_bar, frames_per_beat, bars);
+    config.apply_sequence_borrowed(&mut seq, sequence_name);
+    seq
 }
 
 #[cfg(test)]
