@@ -122,16 +122,20 @@ pub struct Sequencer{
     sync: st_sync::client::Client,
     ps_rx: Receiver<()>,
     jack_client_addr: usize,
-    sequence_name: String
+    sequence_name: String,
+    /// Optional GUI sink: each detected beat boundary is pushed here as
+    /// the running 1-based beat counter. None when running headless.
+    beat_tx: Option<Sender<u64>>,
 }
 impl Sequencer {
     pub fn new(midi_tx: Sender<OwnedMidi>,
 	       ps_rx: Receiver<()>,
 	       jack_client_addr: usize,
-	       sequence_name: String
+	       sequence_name: String,
+	       beat_tx: Option<Sender<u64>>,
     ) -> Sequencer {
 	let sync = st_sync::client::Client::new();
-	Sequencer { midi_tx, sync, ps_rx, jack_client_addr, sequence_name }
+	Sequencer { midi_tx, sync, ps_rx, jack_client_addr, sequence_name, beat_tx }
     }
     pub fn start(self) {
 	let config = Config::new();
@@ -174,6 +178,11 @@ impl Sequencer {
 		beat_counter = beat_counter + 1;
 		println!("{}", beat_counter);
 		check_for_beat_frame = true;
+		if let Some(tx) = &self.beat_tx {
+		    // Non-blocking; if the GUI is gone the audio thread
+		    // keeps running.
+		    let _ = tx.try_send(beat_counter as u64);
+		}
 	    }
 	    if first {
 		if beat_this_cycle &&
