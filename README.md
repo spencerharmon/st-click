@@ -37,8 +37,31 @@ An example is shipped at `etc/st-tools/st-click.yaml`.
 ### YAML format
 
 A config file is a YAML document whose top-level keys are *sequence names*.
-Each sequence is a list of *note entries*. Each note entry is a mapping with
-the following fields:
+Each sequence value may be either a **list of note entries** (legacy, implies
+a 1-bar sequence) or a **mapping** with optional metadata:
+
+```yaml
+# Legacy list form — implicit `bars: 1`:
+backbeat:
+  - { note: "C-1", beat_value: 1.0, every: 2 }
+  - { note: "D#/Eb-1", beat_value: 1.0, every: 2, skip: 1 }
+
+# Mapping form — supports `bars: N` plus `notes:`:
+rumba_clave_4bar:
+  bars: 4
+  notes:
+    - { note: "C#/Db-1", beat_value: 16.0, offset: 0.00 }
+    - { note: "C#/Db-1", beat_value: 16.0, offset: 1.00 }
+```
+
+Sequence-level fields (mapping form only):
+
+| Field    | Type    | Required | Description                                              |
+| -------- | ------- | -------- | -------------------------------------------------------- |
+| `bars`   | integer | no (=1)  | How many bars the sequence spans before repeating.       |
+| `notes`  | list    | yes      | The list of note entries (see below).                    |
+
+Each note entry is a mapping with the following fields:
 
 | Field        | Type         | Required | Description                                                                    |
 | ------------ | ------------ | -------- | ------------------------------------------------------------------------------ |

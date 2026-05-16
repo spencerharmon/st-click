@@ -37,4 +37,18 @@ pushed_backbeat:
     beat_value: 1.0
     offset: -0.25
 
+# Multi-bar demo: 2-bar son clave (3-2). All hits expressed via `offset`
+# in absolute beats from the start of the 2-bar sequence. Using
+# `beat_value: 8.0` (a 2-bar whole) means "fire once per cycle" — the
+# offset alone places each stroke. This is the schema's most powerful
+# idiom for irregular patterns.
+son_clave_32:
+  bars: 2
+  notes:
+    - { note: "C#/Db-1", beat_value: 8.0, offset: 0.0 }   # bar 1 beat 1
+    - { note: "C#/Db-1", beat_value: 8.0, offset: 1.5 }   # bar 1 "and of 2"
+    - { note: "C#/Db-1", beat_value: 8.0, offset: 3.0 }   # bar 1 beat 4
+    - { note: "C#/Db-1", beat_value: 8.0, offset: 5.0 }   # bar 2 beat 2
+    - { note: "C#/Db-1", beat_value: 8.0, offset: 6.0 }   # bar 2 beat 3
+
 
