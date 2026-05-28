@@ -1,4 +1,11 @@
 ---
+# st-click sequences. See st-click/README.md for the full schema.
+#
+# Note names target the GM percussion map (kick=C1, snare=D1, hat=F#1, ...)
+# so any GM-compatible drum kit (drumkv1 with the st-click preset, hydrogen,
+# any GM synth) will produce sensible sounds. The shipped sequences below
+# also still work with the old C-1 / D#-1 mapping — just swap the notes.
+
 backbeat:
   - note: "C-1"
     every: 2
@@ -15,5 +22,33 @@ backbeat:
     every: 1
     beat_value: 2.0
     tuplet: 7
+
+# `offset` demo: a "pushed" backbeat. The snare lands a 16th note before
+# beats 2 and 4 instead of on them — a common funk / latin anticipation.
+# offset: -0.25 = a sixteenth of a quarter ahead. Sign convention:
+# negative = earlier (push), positive = later (drag).
+pushed_backbeat:
+  - note: "C-1"            # kick on 1 and 3 (square)
+    every: 2
+    beat_value: 1.0
+  - note: "D#/Eb1"         # snare anticipating 2 and 4
+    every: 2
+    skip: 1
+    beat_value: 1.0
+    offset: -0.25
+
+# Multi-bar demo: 2-bar son clave (3-2). All hits expressed via `offset`
+# in absolute beats from the start of the 2-bar sequence. Using
+# `beat_value: 8.0` (a 2-bar whole) means "fire once per cycle" — the
+# offset alone places each stroke. This is the schema's most powerful
+# idiom for irregular patterns.
+son_clave_32:
+  bars: 2
+  notes:
+    - { note: "C#/Db-1", beat_value: 8.0, offset: 0.0 }   # bar 1 beat 1
+    - { note: "C#/Db-1", beat_value: 8.0, offset: 1.5 }   # bar 1 "and of 2"
+    - { note: "C#/Db-1", beat_value: 8.0, offset: 3.0 }   # bar 1 beat 4
+    - { note: "C#/Db-1", beat_value: 8.0, offset: 5.0 }   # bar 2 beat 2
+    - { note: "C#/Db-1", beat_value: 8.0, offset: 6.0 }   # bar 2 beat 3
 
 

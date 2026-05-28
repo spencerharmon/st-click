@@ -37,8 +37,31 @@ An example is shipped at `etc/st-tools/st-click.yaml`.
 ### YAML format
 
 A config file is a YAML document whose top-level keys are *sequence names*.
-Each sequence is a list of *note entries*. Each note entry is a mapping with
-the following fields:
+Each sequence value may be either a **list of note entries** (legacy, implies
+a 1-bar sequence) or a **mapping** with optional metadata:
+
+```yaml
+# Legacy list form — implicit `bars: 1`:
+backbeat:
+  - { note: "C-1", beat_value: 1.0, every: 2 }
+  - { note: "D#/Eb-1", beat_value: 1.0, every: 2, skip: 1 }
+
+# Mapping form — supports `bars: N` plus `notes:`:
+rumba_clave_4bar:
+  bars: 4
+  notes:
+    - { note: "C#/Db-1", beat_value: 16.0, offset: 0.00 }
+    - { note: "C#/Db-1", beat_value: 16.0, offset: 1.00 }
+```
+
+Sequence-level fields (mapping form only):
+
+| Field    | Type    | Required | Description                                              |
+| -------- | ------- | -------- | -------------------------------------------------------- |
+| `bars`   | integer | no (=1)  | How many bars the sequence spans before repeating.       |
+| `notes`  | list    | yes      | The list of note entries (see below).                    |
+
+Each note entry is a mapping with the following fields:
 
 | Field        | Type         | Required | Description                                                                    |
 | ------------ | ------------ | -------- | ------------------------------------------------------------------------------ |
@@ -47,6 +70,7 @@ the following fields:
 | `every`      | integer      | no (=1)  | Play on every Nth slot (a slot is one `beat_value`). `every: 2` halves the rate. |
 | `skip`       | integer      | no (=0)  | Skip the first N slots before the pattern begins repeating.                    |
 | `tuplet`     | integer      | no       | Convert `beat_value` into an *N*-tuplet over 2 of that value (e.g. `tuplet: 3` on a quarter gives a quarter-note triplet; `tuplet: 7` gives a septuplet over 2 quarters). |
+| `offset`     | float        | no (=0)  | Shift every emitted hit by this many *quarter-note beats*. Signed (negative = anticipation / push-beat). Independent of `beat_value`, so composes with `tuplet`. Wraps modulo the sequence span. |
 
 Note-name format: `<letter><accidental?><octave>` — examples: `C4`, `A0`,
 `G9`, `C-1`. Sharps/flats are written together as `C#/Db4`, `D#/Eb1`, etc.
